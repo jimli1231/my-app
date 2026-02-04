@@ -1,0 +1,17 @@
+
+> mall_tmp@0.1.0 dev
+> next dev
+
+▲ Next.js 16.1.6 (Turbopack)
+- Local:         http://localhost:3000
+- Network:       http://192.168.0.2:3000
+
+✓ Starting...
+✓ Ready in 1097ms
+○ Compiling / ...
+ GET / 200 in 5.3s (compile: 4.8s, render: 508ms)
+ GET / 200 in 138ms (compile: 6ms, render: 131ms)
+ GET / 200 in 231ms (compile: 7ms, render: 223ms)
+ GET /login 200 in 1136ms (compile: 1101ms, render: 35ms)
+ GET /products/1 200 in 1441ms (compile: 1336ms, render: 105ms)
+[?25h
