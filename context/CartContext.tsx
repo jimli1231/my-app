@@ -27,7 +27,9 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const savedCart = localStorage.getItem('cart');
     if (savedCart) {
       try {
-        setCart(JSON.parse(savedCart));
+        const parsedCart = JSON.parse(savedCart);
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        setCart(parsedCart);
       } catch (e) {
         console.error('Failed to parse cart', e);
       }
