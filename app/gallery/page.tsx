@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useCallback, useEffect } from 'react';
+import Image from 'next/image';
 import { Search, Heart, Trash2, ExternalLink, BookmarkCheck, Loader2 } from 'lucide-react';
 
 const STORAGE_KEY = 'gallery_saved';
@@ -52,14 +53,12 @@ function VideoCard({
   return (
     <div className="bg-white rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-shadow border border-gray-100">
       <div className="relative aspect-video bg-gray-100 overflow-hidden">
-        <img
+        <Image
           src={item.cover}
           alt={item.title}
-          className="w-full h-full object-cover hover:scale-105 transition-transform duration-300"
-          onError={(e) => {
-            (e.target as HTMLImageElement).src =
-              'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="300" height="200"><rect fill="%23e5e7eb" width="300" height="200"/><text fill="%239ca3af" font-size="14" x="150" y="110" text-anchor="middle">无法加载图片</text></svg>';
-          }}
+          fill
+          unoptimized
+          className="object-cover hover:scale-105 transition-transform duration-300"
         />
         <div className="absolute top-2 right-2">
           <span className="bg-pink-500 text-white text-xs px-2 py-0.5 rounded-full uppercase font-medium">
@@ -134,8 +133,8 @@ export default function GalleryPage() {
     setSavedUrls(new Set(items.map((i) => i.url)));
   }, []);
 
-  const search = useCallback(async (kw: string, p: number) => {
-    if (!kw.trim()) return;
+  const search = useCallback(async (kw: string, p: number): Promise<boolean> => {
+    if (!kw.trim()) return false;
     setLoading(true);
     setError('');
     try {
@@ -148,8 +147,10 @@ export default function GalleryPage() {
         setResults((prev) => [...prev, ...data.items]);
       }
       setTotal(data.total);
+      return true;
     } catch (e) {
       setError(e instanceof Error ? e.message : '搜索失败');
+      return false;
     } finally {
       setLoading(false);
     }
@@ -163,8 +164,8 @@ export default function GalleryPage() {
 
   async function loadMore() {
     const next = page + 1;
-    setPage(next);
-    await search(keyword, next);
+    const ok = await search(keyword, next);
+    if (ok) setPage(next);
   }
 
   function handleSave(item: VideoItem) {

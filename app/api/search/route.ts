@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server';
-import axios from 'axios';
 
 const BILIBILI_SEARCH_URL = 'https://api.bilibili.com/x/web-interface/search/type';
 
@@ -12,22 +11,36 @@ const HEADERS = {
 
 export async function GET(req: NextRequest) {
   const { searchParams } = req.nextUrl;
-  const keyword = searchParams.get('keyword') || '美女';
-  const page = parseInt(searchParams.get('page') || '1');
+  const keyword = searchParams.get('keyword') || '';
+  if (!keyword.trim()) {
+    return NextResponse.json({ items: [], total: 0 });
+  }
+
+  const rawPage = searchParams.get('page');
+  const page = rawPage ? Number(rawPage) : 1;
+  if (!Number.isInteger(page) || page < 1) {
+    return NextResponse.json({ error: 'page 参数无效' }, { status: 400 });
+  }
+
+  const url = new URL(BILIBILI_SEARCH_URL);
+  url.searchParams.set('search_type', 'video');
+  url.searchParams.set('keyword', keyword);
+  url.searchParams.set('page', String(page));
+  url.searchParams.set('page_size', '20');
 
   try {
-    const res = await axios.get(BILIBILI_SEARCH_URL, {
+    const res = await fetch(url.toString(), {
       headers: HEADERS,
-      params: {
-        search_type: 'video',
-        keyword,
-        page,
-        page_size: 20,
-      },
-      timeout: 8000,
+      signal: AbortSignal.timeout(8000),
     });
 
-    const data = res.data?.data;
+    if (!res.ok) {
+      console.error('Bilibili API error:', res.status);
+      return NextResponse.json({ error: '搜索失败，请稍后重试' }, { status: 502 });
+    }
+
+    const json = await res.json();
+    const data = json?.data;
     if (!data || !data.result) {
       return NextResponse.json({ items: [], total: 0 });
     }
@@ -45,7 +58,7 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({ items, total: data.numResults || items.length });
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Unknown error';
-    return NextResponse.json({ error: `搜索失败: ${message}` }, { status: 500 });
+    console.error('Search API failed:', err);
+    return NextResponse.json({ error: '搜索失败，请稍后重试' }, { status: 500 });
   }
 }
