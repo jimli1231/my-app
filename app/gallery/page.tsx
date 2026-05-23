@@ -1,7 +1,9 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { Search, Heart, Trash2, ExternalLink, BookmarkCheck, Loader2 } from 'lucide-react';
+
+const STORAGE_KEY = 'gallery_saved';
 
 interface VideoItem {
   source: string;
@@ -12,7 +14,6 @@ interface VideoItem {
   url: string;
   play_count: number;
   like_count: number;
-  id?: number;
   saved_at?: number;
 }
 
@@ -21,6 +22,18 @@ type Tab = 'search' | 'saved';
 function formatCount(n: number): string {
   if (n >= 10000) return (n / 10000).toFixed(1) + '万';
   return String(n);
+}
+
+function loadFromStorage(): VideoItem[] {
+  try {
+    return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+  } catch {
+    return [];
+  }
+}
+
+function saveToStorage(items: VideoItem[]) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
 }
 
 function VideoCard({
@@ -32,19 +45,10 @@ function VideoCard({
 }: {
   item: VideoItem;
   onSave?: (item: VideoItem) => void;
-  onDelete?: (id: number) => void;
+  onDelete?: (url: string) => void;
   saved: boolean;
   mode: Tab;
 }) {
-  const [saving, setSaving] = useState(false);
-
-  async function handleSave() {
-    if (saved || saving || !onSave) return;
-    setSaving(true);
-    await onSave(item);
-    setSaving(false);
-  }
-
   return (
     <div className="bg-white rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-shadow border border-gray-100">
       <div className="relative aspect-video bg-gray-100 overflow-hidden">
@@ -53,7 +57,8 @@ function VideoCard({
           alt={item.title}
           className="w-full h-full object-cover hover:scale-105 transition-transform duration-300"
           onError={(e) => {
-            (e.target as HTMLImageElement).src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="300" height="200"><rect fill="%23e5e7eb" width="300" height="200"/><text fill="%239ca3af" font-size="14" x="150" y="110" text-anchor="middle">无法加载图片</text></svg>';
+            (e.target as HTMLImageElement).src =
+              'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="300" height="200"><rect fill="%23e5e7eb" width="300" height="200"/><text fill="%239ca3af" font-size="14" x="150" y="110" text-anchor="middle">无法加载图片</text></svg>';
           }}
         />
         <div className="absolute top-2 right-2">
@@ -83,29 +88,23 @@ function VideoCard({
             <ExternalLink size={12} />
             查看原帖
           </a>
-          {mode === 'search' && (
+          {mode === 'search' && onSave && (
             <button
-              onClick={handleSave}
-              disabled={saved || saving}
+              onClick={() => !saved && onSave(item)}
+              disabled={saved}
               className={`flex-1 flex items-center justify-center gap-1 text-xs rounded-lg py-1.5 transition-colors ${
                 saved
                   ? 'bg-gray-100 text-gray-400 cursor-default'
                   : 'bg-pink-50 text-pink-600 hover:bg-pink-100 border border-pink-200'
               }`}
             >
-              {saving ? (
-                <Loader2 size={12} className="animate-spin" />
-              ) : saved ? (
-                <BookmarkCheck size={12} />
-              ) : (
-                <Heart size={12} />
-              )}
+              {saved ? <BookmarkCheck size={12} /> : <Heart size={12} />}
               {saved ? '已收藏' : '收藏'}
             </button>
           )}
-          {mode === 'saved' && item.id && onDelete && (
+          {mode === 'saved' && onDelete && (
             <button
-              onClick={() => onDelete(item.id!)}
+              onClick={() => onDelete(item.url)}
               className="flex-1 flex items-center justify-center gap-1 text-xs text-red-500 hover:text-red-700 border border-red-200 rounded-lg py-1.5 hover:bg-red-50 transition-colors"
             >
               <Trash2 size={12} />
@@ -129,6 +128,12 @@ export default function GalleryPage() {
   const [total, setTotal] = useState(0);
   const [error, setError] = useState('');
 
+  useEffect(() => {
+    const items = loadFromStorage();
+    setSavedItems(items);
+    setSavedUrls(new Set(items.map((i) => i.url)));
+  }, []);
+
   const search = useCallback(async (kw: string, p: number) => {
     if (!kw.trim()) return;
     setLoading(true);
@@ -137,7 +142,11 @@ export default function GalleryPage() {
       const res = await fetch(`/api/search?keyword=${encodeURIComponent(kw)}&page=${p}`);
       const data = await res.json();
       if (data.error) throw new Error(data.error);
-      setResults(p === 1 ? data.items : (prev: VideoItem[]) => [...prev, ...data.items]);
+      if (p === 1) {
+        setResults(data.items);
+      } else {
+        setResults((prev) => [...prev, ...data.items]);
+      }
       setTotal(data.total);
     } catch (e) {
       setError(e instanceof Error ? e.message : '搜索失败');
@@ -158,47 +167,28 @@ export default function GalleryPage() {
     await search(keyword, next);
   }
 
-  async function loadSaved() {
-    const res = await fetch('/api/saved');
-    const data = await res.json();
-    setSavedItems(data.items || []);
-    setSavedUrls(new Set((data.items || []).map((i: VideoItem) => i.url)));
+  function handleSave(item: VideoItem) {
+    if (savedUrls.has(item.url)) return;
+    const newItem = { ...item, saved_at: Date.now() };
+    const updated = [newItem, ...savedItems];
+    setSavedItems(updated);
+    setSavedUrls((prev) => new Set([...prev, item.url]));
+    saveToStorage(updated);
   }
 
-  async function handleSave(item: VideoItem) {
-    const res = await fetch('/api/save', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(item),
-    });
-    const data = await res.json();
-    if (data.ok) setSavedUrls((prev) => new Set([...prev, item.url]));
-  }
-
-  async function handleDelete(id: number) {
-    await fetch('/api/delete', {
-      method: 'DELETE',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id }),
-    });
-    setSavedItems((prev) => prev.filter((i) => i.id !== id));
+  function handleDelete(url: string) {
+    const updated = savedItems.filter((i) => i.url !== url);
+    setSavedItems(updated);
     setSavedUrls((prev) => {
-      const item = savedItems.find((i) => i.id === id);
-      if (!item) return prev;
       const next = new Set(prev);
-      next.delete(item.url);
+      next.delete(url);
       return next;
     });
-  }
-
-  function switchTab(t: Tab) {
-    setTab(t);
-    if (t === 'saved') loadSaved();
+    saveToStorage(updated);
   }
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header */}
       <header className="bg-white border-b border-gray-200 sticky top-0 z-10">
         <div className="max-w-6xl mx-auto px-4 py-4 flex items-center gap-6">
           <h1 className="text-xl font-bold text-pink-600 shrink-0">✨ 内容聚合</h1>
@@ -206,7 +196,7 @@ export default function GalleryPage() {
             {(['search', 'saved'] as Tab[]).map((t) => (
               <button
                 key={t}
-                onClick={() => switchTab(t)}
+                onClick={() => setTab(t)}
                 className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
                   tab === t ? 'bg-white text-pink-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'
                 }`}
@@ -219,7 +209,6 @@ export default function GalleryPage() {
       </header>
 
       <main className="max-w-6xl mx-auto px-4 py-6">
-        {/* Search bar */}
         {tab === 'search' && (
           <div className="flex gap-3 mb-6">
             <input
@@ -241,18 +230,18 @@ export default function GalleryPage() {
           </div>
         )}
 
-        {/* Error */}
         {error && (
           <div className="bg-red-50 text-red-600 border border-red-200 rounded-xl px-4 py-3 mb-4 text-sm">
             {error}
           </div>
         )}
 
-        {/* Results grid */}
         {tab === 'search' && (
           <>
             {results.length > 0 && (
-              <p className="text-xs text-gray-400 mb-4">共找到约 {total} 个结果，已显示 {results.length} 个</p>
+              <p className="text-xs text-gray-400 mb-4">
+                共找到约 {total} 个结果，已显示 {results.length} 个
+              </p>
             )}
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
               {results.map((item, i) => (
@@ -293,7 +282,6 @@ export default function GalleryPage() {
           </>
         )}
 
-        {/* Saved tab */}
         {tab === 'saved' && (
           <>
             {savedItems.length === 0 ? (
@@ -306,7 +294,7 @@ export default function GalleryPage() {
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
                 {savedItems.map((item) => (
                   <VideoCard
-                    key={item.id}
+                    key={item.url}
                     item={item}
                     onDelete={handleDelete}
                     saved={true}
